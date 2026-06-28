@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/price_service.dart';
 
 class AccountScreen extends StatefulWidget {
   final String accountName;
+
   const AccountScreen({super.key, required this.accountName});
 
   @override
@@ -20,7 +22,6 @@ class _AccountScreenState extends State<AccountScreen> {
     'KODEX 반도체',
     'TIGER 미국S&P500',
     'TIGER 미국나스닥100',
-    'TIGER 차이나전기차',
     'ACE 미국S&P500',
     'ACE 미국나스닥100',
     'SOL 미국배당다우존스',
@@ -42,16 +43,16 @@ class _AccountScreenState extends State<AccountScreen> {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString(storageKey);
 
-    if (saved != null) {
-      final List data = jsonDecode(saved);
-      setState(() {
-        etfs = data.map((e) {
-          final item = Map<String, dynamic>.from(e);
-          item['currentPrice'] ??= item['buyPrice'] ?? 0;
-          return item;
-        }).toList();
-      });
-    }
+    if (saved == null) return;
+
+    final List data = jsonDecode(saved);
+    setState(() {
+      etfs = data.map((e) {
+        final item = Map<String, dynamic>.from(e);
+        item['currentPrice'] ??= item['buyPrice'] ?? 0;
+        return item;
+      }).toList();
+    });
   }
 
   Future<void> saveEtfs() async {
@@ -59,15 +60,27 @@ class _AccountScreenState extends State<AccountScreen> {
     await prefs.setString(storageKey, jsonEncode(etfs));
   }
 
-  int get totalBuyAmount => etfs.fold(
-        0,
-        (sum, e) => sum + (e['buyPrice'] as int) * (e['quantity'] as int),
-      );
+  Future<void> refreshPrices() async {
+    final updatedEtfs = await PriceService.refreshEtfPrices(etfs);
 
-  int get totalEvaluationAmount => etfs.fold(
-        0,
-        (sum, e) => sum + (e['currentPrice'] as int) * (e['quantity'] as int),
-      );
+    setState(() {
+      etfs = updatedEtfs;
+    });
+
+    await saveEtfs();
+  }
+
+  int get totalBuyAmount {
+    return etfs.fold(0, (sum, e) {
+      return sum + (e['buyPrice'] as int) * (e['quantity'] as int);
+    });
+  }
+
+  int get totalEvaluationAmount {
+    return etfs.fold(0, (sum, e) {
+      return sum + (e['currentPrice'] as int) * (e['quantity'] as int);
+    });
+  }
 
   int get totalProfit => totalEvaluationAmount - totalBuyAmount;
 
@@ -78,9 +91,9 @@ class _AccountScreenState extends State<AccountScreen> {
 
   String won(int value) {
     return value.toString().replaceAllMapped(
-          RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-          (m) => '${m[1]},',
-        );
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (m) => '${m[1]},',
+    );
   }
 
   String percent(double value) {
@@ -126,17 +139,16 @@ class _AccountScreenState extends State<AccountScreen> {
           children: [
             Autocomplete<String>(
               initialValue: TextEditingValue(text: nameController.text),
-              optionsBuilder: (TextEditingValue value) {
+              optionsBuilder: (value) {
                 if (value.text.isEmpty) {
                   return const Iterable<String>.empty();
                 }
                 return etfNames.where(
-                  (name) => name.toLowerCase().contains(
-                        value.text.toLowerCase(),
-                      ),
+                  (name) =>
+                      name.toLowerCase().contains(value.text.toLowerCase()),
                 );
               },
-              onSelected: (String selected) {
+              onSelected: (selected) {
                 nameController.text = selected;
               },
               fieldViewBuilder:
@@ -209,7 +221,10 @@ class _AccountScreenState extends State<AccountScreen> {
               });
 
               await saveEtfs();
-              if (context.mounted) Navigator.pop(context);
+
+              if (context.mounted) {
+                Navigator.pop(context);
+              }
             },
             child: const Text('저장'),
           ),
@@ -231,9 +246,15 @@ class _AccountScreenState extends State<AccountScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              setState(() => etfs.removeAt(index));
+              setState(() {
+                etfs.removeAt(index);
+              });
+
               await saveEtfs();
-              if (context.mounted) Navigator.pop(context);
+
+              if (context.mounted) {
+                Navigator.pop(context);
+              }
             },
             child: const Text('삭제'),
           ),
@@ -287,6 +308,12 @@ class _AccountScreenState extends State<AccountScreen> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: refreshPrices,
+            icon: const Icon(Icons.refresh),
+            label: const Text('현재가 새로고침'),
           ),
           const SizedBox(height: 24),
           const Text(
@@ -347,16 +374,17 @@ class EtfCard extends StatelessWidget {
     final currentPrice = etf['currentPrice'] as int;
     final quantity = etf['quantity'] as int;
 
-    final buyAmount = buyPrice * quantity;
     final evaluationAmount = currentPrice * quantity;
-    final profit = evaluationAmount - buyAmount;
-    final rate = buyAmount == 0 ? 0.0 : profit / buyAmount * 100;
+    final profit = evaluationAmount - (buyPrice * quantity);
+    final rate = buyPrice == 0 ? 0.0 : profit / (buyPrice * quantity) * 100;
 
     return Card(
       color: Colors.white,
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+      ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(18),
@@ -412,7 +440,6 @@ class EtfCard extends StatelessWidget {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const SizedBox(height: 2),
                   IconButton(
                     onPressed: onDelete,
                     icon: const Icon(
@@ -420,8 +447,6 @@ class EtfCard extends StatelessWidget {
                       size: 20,
                       color: Colors.red,
                     ),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
                   ),
                 ],
               ),

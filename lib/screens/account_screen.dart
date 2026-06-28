@@ -1,15 +1,10 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../services/naver_service.dart';
 
 class AccountScreen extends StatefulWidget {
   final String accountName;
-
-  const AccountScreen({
-    super.key,
-    required this.accountName,
-  });
+  const AccountScreen({super.key, required this.accountName});
 
   @override
   State<AccountScreen> createState() => _AccountScreenState();
@@ -17,7 +12,6 @@ class AccountScreen extends StatefulWidget {
 
 class _AccountScreenState extends State<AccountScreen> {
   List<Map<String, dynamic>> etfs = [];
-  bool isLoadingPrices = false;
 
   String get storageKey => 'etfs_${widget.accountName}';
 
@@ -29,16 +23,18 @@ class _AccountScreenState extends State<AccountScreen> {
 
   Future<void> loadEtfs() async {
     final prefs = await SharedPreferences.getInstance();
-    final savedData = prefs.getString(storageKey);
+    final saved = prefs.getString(storageKey);
 
-    if (savedData != null) {
-      final List decoded = jsonDecode(savedData);
+    if (saved != null) {
+      final List data = jsonDecode(saved);
       setState(() {
-        etfs = decoded.map((e) => Map<String, dynamic>.from(e)).toList();
+        etfs = data.map((e) {
+          final item = Map<String, dynamic>.from(e);
+          item['currentPrice'] ??= item['buyPrice'] ?? 0;
+          return item;
+        }).toList();
       });
     }
-
-    await refreshPrices();
   }
 
   Future<void> saveEtfs() async {
@@ -46,141 +42,31 @@ class _AccountScreenState extends State<AccountScreen> {
     await prefs.setString(storageKey, jsonEncode(etfs));
   }
 
-  int get totalBuyAmount {
-    int total = 0;
-    for (final etf in etfs) {
-      total += (etf['buyPrice'] as int) * (etf['quantity'] as int);
-    }
-    return total;
-  }
+  int get totalBuyAmount => etfs.fold(
+        0,
+        (sum, e) => sum + (e['buyPrice'] as int) * (e['quantity'] as int),
+      );
 
-  int get totalEvaluationAmount {
-    int total = 0;
-    for (final etf in etfs) {
-      final currentPrice = etf['currentPrice'] as int?;
-      final quantity = etf['quantity'] as int;
-      if (currentPrice != null) {
-        total += currentPrice * quantity;
-      }
-    }
-    return total;
-  }
+  int get totalEvaluationAmount => etfs.fold(
+        0,
+        (sum, e) => sum + (e['currentPrice'] as int) * (e['quantity'] as int),
+      );
 
-  int get totalProfitLoss => totalEvaluationAmount - totalBuyAmount;
+  int get totalProfit => totalEvaluationAmount - totalBuyAmount;
 
   double get totalProfitRate {
     if (totalBuyAmount == 0) return 0;
-    return totalProfitLoss / totalBuyAmount * 100;
+    return totalProfit / totalBuyAmount * 100;
   }
 
-  Future<void> refreshPrices() async {
-    if (etfs.isEmpty) return;
-
-    setState(() {
-      isLoadingPrices = true;
-    });
-
-    for (final etf in etfs) {
-      final price = await NaverService.getCurrentPrice(etf['name']);
-      etf['currentPrice'] = price;
-    }
-
-    await saveEtfs();
-
-    if (mounted) {
-      setState(() {
-        isLoadingPrices = false;
-      });
-    }
-  }
-
-  void showAddEtfDialog() {
-    final nameController = TextEditingController();
-    final buyPriceController = TextEditingController();
-    final quantityController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (_) {
-        return AlertDialog(
-          title: const Text('ETF 추가'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: 'ETF 이름',
-                  hintText: '예: KODEX 200',
-                ),
-              ),
-              TextField(
-                controller: buyPriceController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: '매수가'),
-              ),
-              TextField(
-                controller: quantityController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: '수량'),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('취소'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final name = nameController.text.trim();
-                final buyPrice = int.tryParse(buyPriceController.text) ?? 0;
-                final quantity = int.tryParse(quantityController.text) ?? 0;
-
-                if (name.isEmpty || buyPrice <= 0 || quantity <= 0) {
-                  return;
-                }
-
-                final currentPrice = await NaverService.getCurrentPrice(name);
-
-                setState(() {
-                  etfs.add({
-                    'name': name,
-                    'buyPrice': buyPrice,
-                    'quantity': quantity,
-                    'currentPrice': currentPrice,
-                  });
-                });
-
-                await saveEtfs();
-
-                if (context.mounted) {
-                  Navigator.pop(context);
-                }
-              },
-              child: const Text('저장'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void deleteEtf(int index) async {
-    setState(() {
-      etfs.removeAt(index);
-    });
-    await saveEtfs();
-  }
-
-  String formatWon(int value) {
+  String won(int value) {
     return value.toString().replaceAllMapped(
           RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-          (match) => '${match[1]},',
+          (m) => '${m[1]},',
         );
   }
 
-  String formatRate(double value) {
+  String percent(double value) {
     final sign = value > 0 ? '+' : '';
     return '$sign${value.toStringAsFixed(2)}%';
   }
@@ -191,74 +77,123 @@ class _AccountScreenState extends State<AccountScreen> {
     return Colors.black;
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.accountName),
+  String brandText(String name) {
+    final upper = name.toUpperCase();
+    if (upper.contains('KODEX')) return 'KODEX';
+    if (upper.contains('TIGER')) return 'TIGER';
+    if (upper.contains('ACE')) return 'ACE';
+    if (upper.contains('SOL')) return 'SOL';
+    if (upper.contains('HANARO')) return 'HANARO';
+    if (upper.contains('RISE')) return 'RISE';
+    return 'ETF';
+  }
+
+  void openEtfDialog({int? index}) {
+    final isEdit = index != null;
+    final old = isEdit ? etfs[index] : null;
+
+    final nameController = TextEditingController(text: old?['name'] ?? '');
+    final buyPriceController =
+        TextEditingController(text: old?['buyPrice']?.toString() ?? '');
+    final currentPriceController =
+        TextEditingController(text: old?['currentPrice']?.toString() ?? '');
+    final quantityController =
+        TextEditingController(text: old?['quantity']?.toString() ?? '');
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(isEdit ? 'ETF 수정' : 'ETF 추가'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: nameController, decoration: const InputDecoration(labelText: 'ETF 이름')),
+            TextField(controller: buyPriceController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '매수가')),
+            TextField(controller: currentPriceController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '현재가')),
+            TextField(controller: quantityController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '수량')),
+          ],
+        ),
         actions: [
-          IconButton(
-            onPressed: isLoadingPrices ? null : refreshPrices,
-            icon: const Icon(Icons.refresh),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+          ElevatedButton(
+            onPressed: () async {
+              final name = nameController.text.trim();
+              final buyPrice = int.tryParse(buyPriceController.text) ?? 0;
+              final currentPrice = int.tryParse(currentPriceController.text) ?? 0;
+              final quantity = int.tryParse(quantityController.text) ?? 0;
+
+              if (name.isEmpty || buyPrice <= 0 || currentPrice <= 0 || quantity <= 0) return;
+
+              final newEtf = {
+                'name': name,
+                'buyPrice': buyPrice,
+                'currentPrice': currentPrice,
+                'quantity': quantity,
+              };
+
+              setState(() {
+                if (isEdit) {
+                  etfs[index] = newEtf;
+                } else {
+                  etfs.add(newEtf);
+                }
+              });
+
+              await saveEtfs();
+              if (context.mounted) Navigator.pop(context);
+            },
+            child: const Text('저장'),
           ),
         ],
       ),
+    );
+  }
+
+  void confirmDelete(int index) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('삭제 확인'),
+        content: Text('${etfs[index]['name']}을 삭제할까요?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+          ElevatedButton(
+            onPressed: () async {
+              setState(() => etfs.removeAt(index));
+              await saveEtfs();
+              if (context.mounted) Navigator.pop(context);
+            },
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.accountName)),
       body: ListView(
         padding: const EdgeInsets.all(18),
         children: [
-          if (isLoadingPrices)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 12),
-              child: Center(child: Text('현재가 불러오는 중...')),
-            ),
           Row(
             children: [
-              Expanded(
-                child: _SummaryCard(
-                  title: '총 매수금액',
-                  value: '${formatWon(totalBuyAmount)}원',
-                ),
-              ),
+              Expanded(child: SummaryCard(title: '총 매수금액', value: '${won(totalBuyAmount)}원')),
               const SizedBox(width: 12),
-              Expanded(
-                child: _SummaryCard(
-                  title: '총 평가금액',
-                  value: totalEvaluationAmount == 0
-                      ? '조회 전'
-                      : '${formatWon(totalEvaluationAmount)}원',
-                ),
-              ),
+              Expanded(child: SummaryCard(title: '총 평가금액', value: '${won(totalEvaluationAmount)}원')),
             ],
           ),
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(
-                child: _SummaryCard(
-                  title: '평가손익',
-                  value: totalEvaluationAmount == 0
-                      ? '조회 전'
-                      : '${formatWon(totalProfitLoss)}원',
-                  valueColor: profitColor(totalProfitLoss),
-                ),
-              ),
+              Expanded(child: SummaryCard(title: '평가손익', value: '${won(totalProfit)}원', valueColor: profitColor(totalProfit))),
               const SizedBox(width: 12),
-              Expanded(
-                child: _SummaryCard(
-                  title: '수익률',
-                  value: totalEvaluationAmount == 0
-                      ? '조회 전'
-                      : formatRate(totalProfitRate),
-                  valueColor: profitColor(totalProfitRate),
-                ),
-              ),
+              Expanded(child: SummaryCard(title: '수익률', value: percent(totalProfitRate), valueColor: profitColor(totalProfitRate))),
             ],
           ),
           const SizedBox(height: 24),
-          const Text(
-            '보유 ETF',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-          ),
+          const Text('보유 ETF', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
           const SizedBox(height: 12),
           if (etfs.isEmpty)
             const Padding(
@@ -266,16 +201,18 @@ class _AccountScreenState extends State<AccountScreen> {
               child: Center(child: Text('아직 등록된 ETF가 없습니다.')),
             ),
           for (int i = 0; i < etfs.length; i++)
-            _EtfCard(
+            EtfCard(
               etf: etfs[i],
-              onDelete: () => deleteEtf(i),
-              formatWon: formatWon,
-              formatRate: formatRate,
+              brand: brandText(etfs[i]['name']),
+              won: won,
+              percent: percent,
               profitColor: profitColor,
+              onTap: () => openEtfDialog(index: i),
+              onDelete: () => confirmDelete(i),
             ),
           const SizedBox(height: 18),
           ElevatedButton.icon(
-            onPressed: showAddEtfDialog,
+            onPressed: () => openEtfDialog(),
             icon: const Icon(Icons.add),
             label: const Text('ETF 추가'),
           ),
@@ -285,91 +222,106 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 }
 
-class _EtfCard extends StatelessWidget {
+class EtfCard extends StatelessWidget {
   final Map<String, dynamic> etf;
-  final VoidCallback onDelete;
-  final String Function(int) formatWon;
-  final String Function(double) formatRate;
+  final String brand;
+  final String Function(int) won;
+  final String Function(double) percent;
   final Color Function(num) profitColor;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
 
-  const _EtfCard({
+  const EtfCard({
+    super.key,
     required this.etf,
-    required this.onDelete,
-    required this.formatWon,
-    required this.formatRate,
+    required this.brand,
+    required this.won,
+    required this.percent,
     required this.profitColor,
+    required this.onTap,
+    required this.onDelete,
   });
 
   @override
   Widget build(BuildContext context) {
     final buyPrice = etf['buyPrice'] as int;
+    final currentPrice = etf['currentPrice'] as int;
     final quantity = etf['quantity'] as int;
-    final currentPrice = etf['currentPrice'] as int?;
 
     final buyAmount = buyPrice * quantity;
-    final evaluationAmount =
-        currentPrice == null ? null : currentPrice * quantity;
-    final profitLoss =
-        evaluationAmount == null ? null : evaluationAmount - buyAmount;
-    final profitRate =
-        profitLoss == null ? null : profitLoss / buyAmount * 100;
+    final evaluationAmount = currentPrice * quantity;
+    final profit = evaluationAmount - buyAmount;
+    final rate = buyAmount == 0 ? 0.0 : profit / buyAmount * 100;
 
     return Card(
       color: Colors.white,
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(18),
-      ),
-      child: ListTile(
-        title: Text(
-          etf['name'],
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Text(
-          currentPrice == null
-              ? '매수가 ${formatWon(buyPrice)}원 · ${quantity}주\n현재가 조회 실패'
-              : '매수가 ${formatWon(buyPrice)}원 · 현재가 ${formatWon(currentPrice)}원 · ${quantity}주',
-        ),
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              evaluationAmount == null
-                  ? '${formatWon(buyAmount)}원'
-                  : '${formatWon(evaluationAmount)}원',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            if (profitLoss != null && profitRate != null)
-              Text(
-                '${formatWon(profitLoss)}원 / ${formatRate(profitRate)}',
-                style: TextStyle(
-                  color: profitColor(profitLoss),
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(
+                  brand,
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
                 ),
               ),
-            GestureDetector(
-              onTap: onDelete,
-              child: const Text(
-                '삭제',
-                style: TextStyle(color: Colors.red, fontSize: 12),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(etf['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    Text('매수가 ${won(buyPrice)}원 · 현재가 ${won(currentPrice)}원 · $quantity주'),
+                  ],
+                ),
               ),
-            ),
-          ],
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text('${won(evaluationAmount)}원', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${won(profit)}원 / ${percent(rate)}',
+                    style: TextStyle(color: profitColor(profit), fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 2),
+                  IconButton(
+                    onPressed: onDelete,
+                    icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _SummaryCard extends StatelessWidget {
+class SummaryCard extends StatelessWidget {
   final String title;
   final String value;
   final Color? valueColor;
 
-  const _SummaryCard({
+  const SummaryCard({
+    super.key,
     required this.title,
     required this.value,
     this.valueColor,
@@ -379,22 +331,12 @@ class _SummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 22),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18)),
       child: Column(
         children: [
           Text(title),
           const SizedBox(height: 8),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              color: valueColor,
-            ),
-          ),
+          Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: valueColor)),
         ],
       ),
     );

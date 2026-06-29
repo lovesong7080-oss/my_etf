@@ -1,3 +1,7 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+
 import 'api_key.dart';
 
 class KrxService {
@@ -17,21 +21,50 @@ class KrxService {
   };
 
   static Future<int?> getCurrentPrice(String etfName) async {
-    final code = etfCodes[etfName.trim()];
+    try {
+      final code = etfCodes[etfName.trim()];
 
-    if (code == null) {
+      if (code == null || ApiKey.serviceKey.isEmpty) {
+        return null;
+      }
+
+      final url =
+          Uri.parse(
+            'https://apis.data.go.kr/1160100/service/GetSecuritiesProductInfoService/getETFPriceInfo',
+          ).replace(
+            queryParameters: {
+              'serviceKey': ApiKey.serviceKey,
+              'resultType': 'json',
+              'numOfRows': '10',
+              'pageNo': '1',
+              'likeSrtnCd': code,
+            },
+          );
+
+      final response = await http.get(url);
+
+      if (response.statusCode != 200) {
+        return null;
+      }
+
+      final data = jsonDecode(response.body);
+      final items = data['response']?['body']?['items']?['item'];
+
+      if (items == null) return null;
+
+      final List itemList = items is List ? items : [items];
+
+      for (final item in itemList) {
+        if (item['srtnCd'] == code) {
+          final priceText = item['clpr'].toString().replaceAll(',', '');
+          return int.tryParse(priceText);
+        }
+      }
+
+      return null;
+    } catch (e) {
       return null;
     }
-
-    if (ApiKey.serviceKey.isEmpty) {
-      return null;
-    }
-
-    // TODO: 공공데이터포털/KRX API 키 발급 후 실제 시세 API 연결
-    // 현재는 API 키 자리와 종목코드 매핑만 준비합니다.
-    await Future.delayed(const Duration(milliseconds: 200));
-
-    return null;
   }
 
   static String? getCode(String etfName) {

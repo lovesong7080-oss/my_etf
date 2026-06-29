@@ -42,7 +42,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
     for (final account in accounts) {
       final saved = prefs.getString('etfs_$account');
-
       int accountEvaluation = 0;
 
       if (saved != null) {
@@ -50,7 +49,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
         for (final item in data) {
           final etf = Map<String, dynamic>.from(item);
-
           final buyPrice = etf['buyPrice'] ?? 0;
           final currentPrice = etf['currentPrice'] ?? buyPrice;
           final quantity = etf['quantity'] ?? 0;
@@ -108,28 +106,19 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('내 ETF')),
+      appBar: AppBar(title: const Text('내 ETF'), centerTitle: true),
       body: RefreshIndicator(
         onRefresh: loadTotals,
         child: ListView(
           padding: const EdgeInsets.all(18),
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 28),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Column(
-                children: [
-                  Text(
-                    '📊 나의 ETF 자산 관리',
-                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
-                  ),
-                  SizedBox(height: 8),
-                  Text('개인연금 · DC · ISA 통합 관리'),
-                ],
-              ),
+            MainAssetCard(
+              totalEvaluationAmount: totalEvaluationAmount,
+              totalProfit: totalProfit,
+              totalProfitRate: totalProfitRate,
+              won: won,
+              percent: percent,
+              profitColor: profitColor,
             ),
             const SizedBox(height: 18),
             Row(
@@ -184,6 +173,61 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class MainAssetCard extends StatelessWidget {
+  final int totalEvaluationAmount;
+  final int totalProfit;
+  final double totalProfitRate;
+  final String Function(int) won;
+  final String Function(double) percent;
+  final Color Function(num) profitColor;
+
+  const MainAssetCard({
+    super.key,
+    required this.totalEvaluationAmount,
+    required this.totalProfit,
+    required this.totalProfitRate,
+    required this.won,
+    required this.percent,
+    required this.profitColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '📊 내 ETF 총자산',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 18),
+          Text(
+            '${won(totalEvaluationAmount)}원',
+            style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '${won(totalProfit)}원  /  ${percent(totalProfitRate)}',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: profitColor(totalProfit),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text('개인연금 · DC · ISA 통합 자산'),
+        ],
       ),
     );
   }

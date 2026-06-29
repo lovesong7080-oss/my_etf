@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -167,9 +168,6 @@ class _AccountScreenState extends State<AccountScreen> {
                       controller: controller,
                       focusNode: focusNode,
                       decoration: const InputDecoration(labelText: 'ETF 이름'),
-                      onChanged: (value) {
-                        nameController.text = value;
-                      },
                     );
                   },
             ),
@@ -340,6 +338,10 @@ class _AccountScreenState extends State<AccountScreen> {
               onDelete: () => confirmDelete(i),
             ),
           const SizedBox(height: 18),
+
+          AllocationCard(etfs: etfs, won: won),
+
+          const SizedBox(height: 18),
           ElevatedButton.icon(
             onPressed: () => openEtfDialog(),
             icon: const Icon(Icons.add),
@@ -491,6 +493,106 @@ class SummaryCard extends StatelessWidget {
               color: valueColor,
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class AllocationCard extends StatelessWidget {
+  final List<Map<String, dynamic>> etfs;
+  final String Function(int) won;
+
+  static const chartColors = [
+    Colors.blue,
+    Colors.red,
+    Colors.green,
+    Colors.orange,
+    Colors.purple,
+    Colors.teal,
+    Colors.indigo,
+    Colors.pink,
+  ];
+
+  const AllocationCard({super.key, required this.etfs, required this.won});
+
+  @override
+  Widget build(BuildContext context) {
+    final total = etfs.fold<int>(
+      0,
+      (sum, e) => sum + (e['currentPrice'] as int) * (e['quantity'] as int),
+    );
+
+    if (etfs.isEmpty || total == 0) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '보유 비중',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            height: 180,
+            child: PieChart(
+              PieChartData(
+                sectionsSpace: 2,
+                centerSpaceRadius: 42,
+                sections: [
+                  for (int i = 0; i < etfs.length; i++)
+                    PieChartSectionData(
+                      color: chartColors[i % chartColors.length],
+                      value:
+                          ((etfs[i]['currentPrice'] as int) *
+                                  (etfs[i]['quantity'] as int))
+                              .toDouble(),
+                      title:
+                          '${((((etfs[i]['currentPrice'] as int) * (etfs[i]['quantity'] as int)) / total) * 100).toStringAsFixed(1)}%',
+                      radius: 54,
+                      titleStyle: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          for (final etf in etfs)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      etf['name'],
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  Text(
+                    '${(((etf['currentPrice'] as int) * (etf['quantity'] as int)) / total * 100).toStringAsFixed(1)}%',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    won(
+                      (etf['currentPrice'] as int) * (etf['quantity'] as int),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );

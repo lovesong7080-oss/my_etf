@@ -1,3 +1,5 @@
+import 'api_key.dart';
+import 'krx_service.dart';
 import 'naver_service.dart';
 
 class PriceService {
@@ -5,10 +7,18 @@ class PriceService {
     required String etfName,
     required int currentPrice,
   }) async {
-    final realPrice = await NaverService.getCurrentPrice(etfName);
+    if (ApiKey.serviceKey.isNotEmpty) {
+      final krxPrice = await KrxService.getCurrentPrice(etfName);
 
-    if (realPrice != null && realPrice > 0) {
-      return realPrice;
+      if (krxPrice != null && krxPrice > 0) {
+        return krxPrice;
+      }
+    }
+
+    final naverPrice = await NaverService.getCurrentPrice(etfName);
+
+    if (naverPrice != null && naverPrice > 0) {
+      return naverPrice;
     }
 
     return currentPrice;

@@ -1,6 +1,8 @@
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../services/price_service.dart';
 
 class AccountScreen extends StatefulWidget {
@@ -123,12 +125,15 @@ class _AccountScreenState extends State<AccountScreen> {
     final old = isEdit ? etfs[index] : null;
 
     final nameController = TextEditingController(text: old?['name'] ?? '');
-    final buyPriceController =
-        TextEditingController(text: old?['buyPrice']?.toString() ?? '');
-    final currentPriceController =
-        TextEditingController(text: old?['currentPrice']?.toString() ?? '');
-    final quantityController =
-        TextEditingController(text: old?['quantity']?.toString() ?? '');
+    final buyPriceController = TextEditingController(
+      text: old?['buyPrice']?.toString() ?? '',
+    );
+    final currentPriceController = TextEditingController(
+      text: old?['currentPrice']?.toString() ?? '',
+    );
+    final quantityController = TextEditingController(
+      text: old?['quantity']?.toString() ?? '',
+    );
 
     showDialog(
       context: context,
@@ -153,20 +158,20 @@ class _AccountScreenState extends State<AccountScreen> {
               },
               fieldViewBuilder:
                   (context, controller, focusNode, onFieldSubmitted) {
-                controller.text = nameController.text;
-                controller.selection = TextSelection.fromPosition(
-                  TextPosition(offset: controller.text.length),
-                );
+                    controller.text = nameController.text;
+                    controller.selection = TextSelection.fromPosition(
+                      TextPosition(offset: controller.text.length),
+                    );
 
-                return TextField(
-                  controller: controller,
-                  focusNode: focusNode,
-                  decoration: const InputDecoration(labelText: 'ETF 이름'),
-                  onChanged: (value) {
-                    nameController.text = value;
+                    return TextField(
+                      controller: controller,
+                      focusNode: focusNode,
+                      decoration: const InputDecoration(labelText: 'ETF 이름'),
+                      onChanged: (value) {
+                        nameController.text = value;
+                      },
+                    );
                   },
-                );
-              },
             ),
             TextField(
               controller: buyPriceController,
@@ -266,9 +271,7 @@ class _AccountScreenState extends State<AccountScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.accountName),
-      ),
+      appBar: AppBar(title: Text(widget.accountName)),
       body: ListView(
         padding: const EdgeInsets.all(18),
         children: [
@@ -382,9 +385,7 @@ class EtfCard extends StatelessWidget {
       color: Colors.white,
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(18),

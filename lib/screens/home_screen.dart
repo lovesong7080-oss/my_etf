@@ -1,6 +1,8 @@
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import 'account_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -13,14 +15,17 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final accounts = ['개인연금', 'DC', 'ISA'];
 
-  Map<String, int> accountValues = {
-    '개인연금': 0,
-    'DC': 0,
-    'ISA': 0,
-  };
+  Map<String, int> accountValues = {'개인연금': 0, 'DC': 0, 'ISA': 0};
 
   int totalBuyAmount = 0;
   int totalEvaluationAmount = 0;
+
+  int get totalProfit => totalEvaluationAmount - totalBuyAmount;
+
+  double get totalProfitRate {
+    if (totalBuyAmount == 0) return 0;
+    return totalProfit / totalBuyAmount * 100;
+  }
 
   @override
   void initState() {
@@ -33,10 +38,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
     int buyTotal = 0;
     int evaluationTotal = 0;
-    final newAccountValues = <String, int>{};
+    final values = <String, int>{};
 
     for (final account in accounts) {
       final saved = prefs.getString('etfs_$account');
+
       int accountEvaluation = 0;
 
       if (saved != null) {
@@ -44,38 +50,32 @@ class _HomeScreenState extends State<HomeScreen> {
 
         for (final item in data) {
           final etf = Map<String, dynamic>.from(item);
-          final buyPrice = etf['buyPrice'] as int;
-          final currentPrice = etf['currentPrice'] as int;
-          final quantity = etf['quantity'] as int;
 
-          buyTotal += buyPrice * quantity;
-          evaluationTotal += currentPrice * quantity;
+          final buyPrice = etf['buyPrice'] ?? 0;
+          final currentPrice = etf['currentPrice'] ?? buyPrice;
+          final quantity = etf['quantity'] ?? 0;
+
+          buyTotal += (buyPrice as int) * (quantity as int);
+          evaluationTotal += (currentPrice as int) * quantity;
           accountEvaluation += currentPrice * quantity;
         }
       }
 
-      newAccountValues[account] = accountEvaluation;
+      values[account] = accountEvaluation;
     }
 
     setState(() {
       totalBuyAmount = buyTotal;
       totalEvaluationAmount = evaluationTotal;
-      accountValues = newAccountValues;
+      accountValues = values;
     });
-  }
-
-  int get totalProfit => totalEvaluationAmount - totalBuyAmount;
-
-  double get totalProfitRate {
-    if (totalBuyAmount == 0) return 0;
-    return totalProfit / totalBuyAmount * 100;
   }
 
   String won(int value) {
     return value.toString().replaceAllMapped(
-          RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-          (m) => '${m[1]},',
-        );
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (m) => '${m[1]},',
+    );
   }
 
   String percent(double value) {
@@ -89,18 +89,17 @@ class _HomeScreenState extends State<HomeScreen> {
     return Colors.black;
   }
 
-  String icon(String account) {
+  String accountIcon(String account) {
     if (account == '개인연금') return '💰';
     if (account == 'DC') return '🏢';
-    return '💳';
+    if (account == 'ISA') return '💳';
+    return '📁';
   }
 
   Future<void> openAccount(String account) async {
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => AccountScreen(accountName: account),
-      ),
+      MaterialPageRoute(builder: (_) => AccountScreen(accountName: account)),
     );
 
     loadTotals();
@@ -109,99 +108,116 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('내 ETF'),
-        centerTitle: true,
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(18),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(22),
+      appBar: AppBar(title: const Text('내 ETF')),
+      body: RefreshIndicator(
+        onRefresh: loadTotals,
+        child: ListView(
+          padding: const EdgeInsets.all(18),
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 28),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Column(
+                children: [
+                  Text(
+                    '📊 나의 ETF 자산 관리',
+                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
+                  ),
+                  SizedBox(height: 8),
+                  Text('개인연금 · DC · ISA 통합 관리'),
+                ],
+              ),
             ),
-            child: const Column(
+            const SizedBox(height: 18),
+            Row(
               children: [
-                Text(
-                  '📊 나의 ETF 자산 관리',
-                  style: TextStyle(fontSize: 25, fontWeight: FontWeight.w800),
-                ),
-                SizedBox(height: 10),
-                Text('개인연금 · DC · ISA 통합 관리'),
-              ],
-            ),
-          ),
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              Expanded(
-                child: SummaryCard(
-                  title: '총 매수금액',
-                  value: '${won(totalBuyAmount)}원',
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: SummaryCard(
-                  title: '총 평가금액',
-                  value: '${won(totalEvaluationAmount)}원',
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: SummaryCard(
-                  title: '평가손익',
-                  value: '${won(totalProfit)}원',
-                  valueColor: profitColor(totalProfit),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: SummaryCard(
-                  title: '수익률',
-                  value: percent(totalProfitRate),
-                  valueColor: profitColor(totalProfitRate),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            '계좌',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 12),
-          for (final account in accounts)
-            Card(
-              color: Colors.white,
-              elevation: 0,
-              margin: const EdgeInsets.only(bottom: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: ListTile(
-                onTap: () => openAccount(account),
-                leading: Text(
-                  icon(account),
-                  style: const TextStyle(fontSize: 28),
-                ),
-                title: Text(
-                  account,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                Expanded(
+                  child: SummaryCard(
+                    title: '총 매수금액',
+                    value: '${won(totalBuyAmount)}원',
                   ),
                 ),
-                trailing: Text('${won(accountValues[account] ?? 0)}원'),
-              ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: SummaryCard(
+                    title: '총 평가금액',
+                    value: '${won(totalEvaluationAmount)}원',
+                  ),
+                ),
+              ],
             ),
-        ],
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: SummaryCard(
+                    title: '평가손익',
+                    value: '${won(totalProfit)}원',
+                    valueColor: profitColor(totalProfit),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: SummaryCard(
+                    title: '수익률',
+                    value: percent(totalProfitRate),
+                    valueColor: profitColor(totalProfitRate),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 26),
+            const Text(
+              '계좌',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 12),
+            for (final account in accounts)
+              AccountTile(
+                icon: accountIcon(account),
+                title: account,
+                value: '${won(accountValues[account] ?? 0)}원',
+                onTap: () => openAccount(account),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class AccountTile extends StatelessWidget {
+  final String icon;
+  final String title;
+  final String value;
+  final VoidCallback onTap;
+
+  const AccountTile({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.value,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: Colors.white,
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: ListTile(
+        onTap: onTap,
+        leading: Text(icon, style: const TextStyle(fontSize: 26)),
+        title: Text(
+          title,
+          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        ),
+        trailing: Text(value),
       ),
     );
   }

@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:http/http.dart' as http;
 
 class NaverService {
@@ -13,29 +14,33 @@ class NaverService {
   };
 
   static Future<int?> getCurrentPrice(String etfName) async {
-    final code = etfCodes[etfName.trim()];
+    try {
+      final code = etfCodes[etfName.trim()];
 
-    if (code == null) {
+      if (code == null) {
+        return null;
+      }
+
+      final url = Uri.parse(
+        'https://api.finance.naver.com/service/itemSummary.nhn?itemcode=$code',
+      );
+
+      final response = await http.get(url);
+
+      if (response.statusCode != 200) {
+        return null;
+      }
+
+      final data = jsonDecode(response.body);
+      final price = data['now'];
+
+      if (price is int) {
+        return price;
+      }
+
+      return int.tryParse(price.toString());
+    } catch (e) {
       return null;
     }
-
-    final url = Uri.parse(
-      'https://api.finance.naver.com/service/itemSummary.nhn?itemcode=$code',
-    );
-
-    final response = await http.get(url);
-
-    if (response.statusCode != 200) {
-      return null;
-    }
-
-    final data = jsonDecode(response.body);
-    final price = data['now'];
-
-    if (price is int) {
-      return price;
-    }
-
-    return int.tryParse(price.toString());
   }
 }

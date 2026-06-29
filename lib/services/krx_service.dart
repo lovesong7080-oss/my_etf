@@ -37,7 +37,7 @@ class KrxService {
               'resultType': 'json',
               'numOfRows': '10',
               'pageNo': '1',
-              'likeSrtnCd': code,
+              'srtnCd': code,
             },
           );
 
@@ -55,8 +55,14 @@ class KrxService {
       final List itemList = items is List ? items : [items];
 
       for (final item in itemList) {
-        if (item['srtnCd'] == code) {
-          final priceText = item['clpr'].toString().replaceAll(',', '');
+        if (item['srtnCd'] == code &&
+            item['itmsNm'].toString().contains(etfName.trim())) {
+          print(item);
+          final priceText = item['nav']
+              .toString()
+              .split('.')
+              .first
+              .replaceAll(',', '');
           return int.tryParse(priceText);
         }
       }
